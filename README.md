@@ -8,7 +8,7 @@ Start application using your configuration.
 ## CLI
 - Start Application: application <path-to-config-file> [--debug]
 - Help: application --help
-- Get Current Application Version: --version
+- Get Current Application Version: application --version
 
 ## Currently implemented
 - AMDGPU
