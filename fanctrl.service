@@ -1,0 +1,10 @@
+[Unit]
+Description=Fancontrol (For AMDGPU)
+
+[Service]
+Type=simple
+#Adjust paths as needed
+ExecStart=/usr/local/bin/fanctrl "/etc/fanctrl_config.txt"
+
+[Install]
+WantedBy=multi-user.target
