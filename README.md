@@ -2,7 +2,7 @@
 Application to control fanspeed on Linux Operating System
 
 ## Build & Install
-Build using the makefile (is configured for gcc), simply run "make CFG=Release".
+Build using the makefile (is configured for gcc), run "make CFG=Release".
 This project doesn't rely on other dependencies, simply build and use.
 - Install by copying the executable to the location of your desire, e.g. /usr/local/bin/.
 - Create configuration file (Use fanctrl_config.txt as template). Place in desired directory, e.g. /etc/.
