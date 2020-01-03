@@ -9,7 +9,7 @@
 #define CFGFILE_SECTION_NAME_AMDGPU                  "AMDGPU"
 
 #define CFGFILE_KEY_NAME_FANCTRL_UPDATETIME          "UpdateDelayTime"
-#define CFGFILE_KEY_NAME_FANCTRL_CHANGE_HYSTERESIS   "FanSpeedChangeHysteresis"
+#define CFGFILE_KEY_NAME_FANCTRL_CHANGE_HYSTERESIS   "TempChangeHysteresis"
 
 #define CFGFILE_KEY_NAME_AMDGPU_PATH_SET_CTRL_MODE   "PathSetFanCtrlMode"
 #define CFGFILE_KEY_NAME_AMDGPU_PATH_ENABLE_FAN      "PathEnableFan"
@@ -42,15 +42,17 @@ typedef struct
 }TagCLICommands;
 
 static const TagCLICommands tagaCLICommands_m[]={
-  {"--help","-h"},
-  {"--version","-v"},
-  {"--debug","-d"},
+  {"--help",    "-h"},
+  {"--version", "-v"},
+  {"--debug",   "-d"},
 };
 
 int iCleanupFanControl(int iRc);
 void vSignalHandler(int iSignum);
 
 static void vCLIPrintHelp(void);
+static void vCLIPrintWrongArgs(const char *pcArg);
+
 static int iParseCLI_m(int argc,
                        char *argv[],
                        unsigned int *puiOptions);
@@ -128,7 +130,7 @@ int main(int argc, char *argv[])
                  argv,
                  &uiCLIOptions))
   {
-    vCLIPrintHelp();
+    vCLIPrintWrongArgs((argc > 1)?argv[1]:NULL);
     return(EXIT_FAILURE);
   }
   if(uiCLIOptions & CLI_OPTION_FLAG_PRINT_HELP)
@@ -138,10 +140,11 @@ int main(int argc, char *argv[])
   }
   if(uiCLIOptions & CLI_OPTION_FLAG_PRINT_VERSION)
   {
-    printf("FanCtrl Version: %u.%u.%u\n",
+    printf("fanctrl version: %u.%u.%u (%s)\n",
            FANCTRL_VERSION_MAJOR,
            FANCTRL_VERSION_MINOR,
-           FANCTRL_VERSION_PATCH);
+           FANCTRL_VERSION_PATCH,
+           FANCTRL_VERSION_STATUS);
     return(EXIT_SUCCESS);
   }
   if(uiCLIOptions & CLI_OPTION_FLAG_DEBUG)
@@ -211,7 +214,7 @@ int iCleanupFanControl(int iRc)
       break;
     case RUN_RET_OK:
     default:
-      if(fanCtrl_AMDGPU_Reset(ptagFanCtrl_m))
+      if(fanCtrl_ResetDevices(ptagFanCtrl_m))
       {
         iRc=1;
         ERR_PUTS("fanCtrl_AMDGPU_Reset() failed! Fanspeed stays in manual mode!");
@@ -237,6 +240,20 @@ static void vCLIPrintHelp(void)
          tagaCLICommands_m[CLI_CMD_INDEX_VERSION].pcAlias);
 }
 
+static void vCLIPrintWrongArgs(const char *pcArg)
+{
+  if(pcArg)
+    printf("fanctrl: Unknown option: \'%s\'\n"
+           "Use \'fanctrl %s\' for more information\n",
+           pcArg,
+           tagaCLICommands_m[CLI_CMD_INDEX_HELP].pcCmd);
+  else
+    printf("fanctrl: No parameters specified\n"
+           "Use \'fanctrl %s\' for more information\n",
+           tagaCLICommands_m[CLI_CMD_INDEX_HELP].pcCmd);
+
+}
+
 static int iParseCLI_m(int argc,
                        char *argv[],
                        unsigned int *puiOptions)
@@ -258,14 +275,14 @@ static int iParseCLI_m(int argc,
     return(0); /* No more parsing needed */
   }
 
-  if(*argv[1] != '/') /* First argument must be a path if not help */
+  if(*argv[1] != '/') /* First argument must be a path, if it's not help */
   {
     return(1);
   }
-  if(argc == 2) /* No more args than config file path */
+  if(argc == 2) /* No more args than config file path, OK */
     return(0);
 
-  if(argc == 3)
+  if(argc == 3) /* Check for debug switch */
   {
     if((strcmp(argv[2],tagaCLICommands_m[CLI_CMD_INDEX_DEBUG].pcCmd)   == 0) ||
        (strcmp(argv[2],tagaCLICommands_m[CLI_CMD_INDEX_DEBUG].pcAlias) == 0))
@@ -314,7 +331,7 @@ static int iFanCtrl_ReadCfgFile(const char *pcFilePath,
                       pcFilePath,
                       INI_OPT_CASE_SENSITIVE)) != INI_ERR_NONE)
   {
-    ERR_PRINTF("Failed to create config file (%d): %s",
+    ERR_PRINTF("IniFile_New(): Failed (%d): %s",
                iRc,
                IniFile_GetErrorText(iRc));
     return(1);
@@ -489,7 +506,7 @@ static int iFanCtrl_ReadCfgFile(const char *pcFilePath,
     lTmp=strtol(caTmp,&pcTmp,10);
     if((*pcTmp != ',') ||
        (lTmp < 0) ||
-       (lTmp > UCHAR_MAX))
+       (lTmp > UCHAR_MAX)) /* If Greater than UCHAR_MAX, failure */
     {
       ERR_PRINTF("conversion failed (Fanspeed) for value \"%s\", Correct format: FanSpeedX=<speed in %%>,<temperature in 1/10 °C>",
                 caTmp);
@@ -498,11 +515,11 @@ static int iFanCtrl_ReadCfgFile(const char *pcFilePath,
     }
     tagaTemps[uiIndex].ucFanSpeedPercent=(unsigned char)lTmp;
 
-    ++pcTmp;
+    ++pcTmp; /* Skip ',' */
     lTmp=strtol(pcTmp,&pcTmp,10);
     if((*pcTmp != '\0') ||
        (lTmp < 0) ||
-       (lTmp > INT_MAX)) /* Greater than max. Int */
+       (lTmp > INT_MAX)) /* If Greater than INT_MAX, failure */
     {
       ERR_PRINTF("conversion failed (Temperature) for value \"%s\", Correct format: FanSpeedX=<speed in %%>,<temperature in 1/10 °C>",
                 caTmp);

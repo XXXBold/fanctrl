@@ -39,7 +39,7 @@ enum
 
   CFG_LIMIT_MAX_DELAY_TIME              =300,   /* 30 seconds */
   CFG_LIMIT_MAX_TEMP                    =1500,  /* 150°C */
-  CFG_LIMIT_MAX_HYSTERESIS              =20,    /* 20% */
+  CFG_LIMIT_MAX_HYSTERESIS              =30,    /* 30% */
 };
 
 #define AMDGPU_PWM_VAL_MIN 0
@@ -65,6 +65,7 @@ typedef struct
   const char *pcPathSetFanCtrlMode;
   const char *pcPathEnableFan;
   const char *pcPathSetPWM;
+  int iLastUpdateTemp;
   unsigned int uiPointsCount;
   unsigned int uiSensorsCount;
   TagFanCtrlTempPoint *ptagPoints;
@@ -74,7 +75,7 @@ typedef struct
 struct TagFanCtrl_t
 {
   unsigned int uiUpdateDelayTime;
-  unsigned int uiFSHysteresis;
+  unsigned char ucTempHysteresisPercent;
   volatile unsigned int *puiQuitRunFlag;
   unsigned int uiFlags;
   TagFanConfigAMDGPU *ptagAMDGPU;
@@ -95,7 +96,7 @@ static int amdgpu_SetMode(TagFanCtrl *ptagFanCtrl,
                           int iModeManual);
 
 TagFanCtrl *fanCtrl_Create(unsigned int uiUpdateDelayTime,
-                           unsigned char ucFanSpeedHysteresis,
+                           unsigned char ucTempHysteresisPercent,
                            unsigned int *puiQuitRunFlag,
                            unsigned int uiFlags)
 {
@@ -108,10 +109,10 @@ TagFanCtrl *fanCtrl_Create(unsigned int uiUpdateDelayTime,
                CFG_LIMIT_MAX_DELAY_TIME);
     return(NULL);
   }
-  if(ucFanSpeedHysteresis > CFG_LIMIT_MAX_HYSTERESIS)
+  if(ucTempHysteresisPercent > CFG_LIMIT_MAX_HYSTERESIS)
   {
-    ERR_PRINTF("Invalid value: ucFanSpeedHysteresis too high(=%u), max=%u",
-               ucFanSpeedHysteresis,
+    ERR_PRINTF("Invalid value: ucTempHysteresisPercent too high(=%u%%), max=%u%%",
+               ucTempHysteresisPercent,
                CFG_LIMIT_MAX_HYSTERESIS);
     return(NULL);
   }
@@ -122,7 +123,7 @@ TagFanCtrl *fanCtrl_Create(unsigned int uiUpdateDelayTime,
     return(NULL);
   }
   ptagFanCtrl->uiUpdateDelayTime=uiUpdateDelayTime;
-  ptagFanCtrl->uiFSHysteresis=(unsigned int)(ucFanSpeedHysteresis*AMDGPU_FANSPEED_PERCENT_TO_PWM+0.5);
+  ptagFanCtrl->ucTempHysteresisPercent=ucTempHysteresisPercent;
   ptagFanCtrl->puiQuitRunFlag=puiQuitRunFlag;
   ptagFanCtrl->uiFlags=0;
 
@@ -133,10 +134,10 @@ TagFanCtrl *fanCtrl_Create(unsigned int uiUpdateDelayTime,
 
   DBG_PRINTF("Created New FanCtrl-Object\n"
              "->uiUpdateDelayTime=%u\n"
-             "->uiFSHysteresis=%u\n"
+             "->ucTempHysteresisPercent=%u%%\n"
              "->uiFlags=0x%X",
              ptagFanCtrl->uiUpdateDelayTime,
-             ptagFanCtrl->uiFSHysteresis,
+             ptagFanCtrl->ucTempHysteresisPercent,
              ptagFanCtrl->uiFlags);
 
   return(ptagFanCtrl);
@@ -148,10 +149,17 @@ void fanCtrl_Destroy(TagFanCtrl *ptagFanCtrl)
   free(ptagFanCtrl);
 }
 
-int fanCtrl_AMDGPU_Reset(TagFanCtrl *ptagFanCtrl)
+int fanCtrl_ResetDevices(TagFanCtrl *ptagFanCtrl)
 {
-  DBG_PUTS("AMDGPU: Reset to automode");
-  return(amdgpu_SetMode(ptagFanCtrl,0));
+  int iRc=0;
+
+  DBG_PUTS("Resetting Devices to Automode...");
+  if(ptagFanCtrl->ptagAMDGPU)
+  {
+    DBG_PUTS("AMDGPU: Reset to automode");
+    iRc|=amdgpu_SetMode(ptagFanCtrl,0);
+  }
+  return(iRc);
 }
 
 int fanCtrl_AMDGPU_Init(TagFanCtrl *ptagFanCtrl,
@@ -196,6 +204,7 @@ int fanCtrl_AMDGPU_Init(TagFanCtrl *ptagFanCtrl,
   }
   ptagFanCtrl->ptagAMDGPU->uiSensorsCount=uiSensorsCount;
   ptagFanCtrl->ptagAMDGPU->uiPointsCount=uiTempsCount;
+  ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp=0;
   ptagFanCtrl->ptagAMDGPU->pcPathSetFanCtrlMode=pConfig->caPathSetFanCtrlMode;
   ptagFanCtrl->ptagAMDGPU->pcPathEnableFan=pConfig->caPathEnableFan;
   ptagFanCtrl->ptagAMDGPU->pcPathSetPWM=pConfig->caPathSetPWM;
@@ -251,7 +260,6 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
   struct timespec tagWaitTime;
   int iHighestSensorTempVal;
   unsigned int uiIndex;
-  unsigned int uiLastSetPWM;
   unsigned int uiCurrPWM;
   int iCurrFanState;
   float fTmp;
@@ -280,10 +288,11 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
              tagWaitTime.tv_sec,
              tagWaitTime.tv_nsec);
 
-  uiLastSetPWM=UINT_MAX;
-  do
+  while((*ptagFanCtrl->puiQuitRunFlag) == 0)
   {
-    DBG_PUTS("Update temperatures...");
+    nanosleep(&tagWaitTime,NULL);
+    DBG_PRINTF("Timestamp=%" PRIu64 ", update temperatures...",time(NULL));
+    /* Check if AMDGPU is used */
     if(ptagFanCtrl->ptagAMDGPU)
     {
       iHighestSensorTempVal=INT_MIN;
@@ -306,6 +315,24 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
         if(ptagFanCtrl->ptagAMDGPU->ptagSensors[uiIndex].iTempCelsius > iHighestSensorTempVal)
           iHighestSensorTempVal=ptagFanCtrl->ptagAMDGPU->ptagSensors[uiIndex].iTempCelsius;
       }
+      if(ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp == iHighestSensorTempVal)
+      {/* No temperature change, continue */
+        DBG_PUTS("No Temperature change");
+        continue;
+      }
+      uiIndex=(iHighestSensorTempVal > ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp)?iHighestSensorTempVal-ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp:ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp-iHighestSensorTempVal;
+
+      DBG_PRINTF("iLastUpdateTemp=%d Temperature change=%u, HysteresisTemp=%u, ",
+                 ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp,
+                 uiIndex,
+                 (unsigned int)((float)ptagFanCtrl->ucTempHysteresisPercent*ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp/100.0+0.5));
+      if(uiIndex < (unsigned int)((float)ptagFanCtrl->ucTempHysteresisPercent*ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp/100.0+0.5))
+      {/* No Fanspeed update needed */
+        DBG_PUTS("No Fanspeed update required, temperature hysteresis below configured value");
+        continue;
+      }
+      ptagFanCtrl->ptagAMDGPU->iLastUpdateTemp=iHighestSensorTempVal;
+
       /* Update AMDGPU Fanspeed if needed */
       for(uiIndex=0;uiIndex < ptagFanCtrl->ptagAMDGPU->uiPointsCount;++uiIndex)
       {/* Find closest defined temperature point */
@@ -364,24 +391,16 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
 
       if(uiCurrPWM)
       {
-        if(((uiCurrPWM > uiLastSetPWM) && (uiCurrPWM - uiLastSetPWM > ptagFanCtrl->uiFSHysteresis)) ||
-           ((uiCurrPWM < uiLastSetPWM) && (uiLastSetPWM - uiCurrPWM > ptagFanCtrl->uiFSHysteresis)))
+        if(iFanCtrl_SetFanSpeed(eFanCtrlType_AMDGPU,
+                                ptagFanCtrl->ptagAMDGPU->pcPathSetPWM,
+                                uiCurrPWM))
         {
-          if(iFanCtrl_SetFanSpeed(eFanCtrlType_AMDGPU,
-                                  ptagFanCtrl->ptagAMDGPU->pcPathSetPWM,
-                                  uiCurrPWM))
-          {
-            DBG_PUTS("iFanCtrl_SetFanSpeed() failed");
-            return(RUN_RET_ERR_PWM_WRITE);
-          }
-          uiLastSetPWM=uiCurrPWM;
+          DBG_PUTS("iFanCtrl_SetFanSpeed() failed");
+          return(RUN_RET_ERR_PWM_WRITE);
         }
-        else
-          DBG_PUTS("Fanspeed change didn't exceed hysteresis, no adjustments done");
       }
     }
-    nanosleep(&tagWaitTime,NULL);
-  }while((*ptagFanCtrl->puiQuitRunFlag) == 0);
+  }
 
   DBG_PUTS("Stopping loop...");
   return(RUN_RET_OK);

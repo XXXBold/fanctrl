@@ -1,7 +1,7 @@
 #ifndef DATATYPES_H_INCLUDED
   #define DATATYPES_H_INCLUDED
 
-#include <string.h>
+#include <string.h> /* For memcpy */
 
 #if defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* >= C99 */
   #define INLINE static inline

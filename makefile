@@ -92,8 +92,8 @@ OBJ=$(COMMON_OBJ) $(CFG_OBJ)
 ALL_OBJ=$(OUTDIR)/fanctrl.o $(OUTDIR)/fanctrl_cli.o \
 	$(OUTDIR)/inifile.o
 
-COMPILE=gcc -c   -Wall -W -Wcomment -Wconversion -Wfloat-equal -Wformat -Wimplicit -Wmain -o "$(OUTDIR)/$(*F).o" $(CFG_INC) $<
-LINK=gcc  -Wall -o "$(OUTFILE)" $(ALL_OBJ)
+COMPILE=gcc -c   -O2 -Wall -W -Wcomment -Wformat -Wimplicit -Wmain -o "$(OUTDIR)/$(*F).o" $(CFG_INC) $<
+LINK=gcc  -O2 -Wall -o "$(OUTFILE)" $(ALL_OBJ)
 COMPILE_ADA=gnat -O -c -o "$(OUTDIR)/$(*F).o" "$<"
 COMPILE_ADB=gnat -O -c -o "$(OUTDIR)/$(*F).o" "$<"
 COMPILE_F=gfortran -O -g -o "$(OUTDIR)/$(*F).o" "$<"
