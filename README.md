@@ -8,7 +8,7 @@ This project doesn't rely on other dependencies, simply build and use.
 - Create configuration file (Use fanctrl_config.txt as template). Place in desired directory, e.g. /etc/.
 
 ## How to use
-The Application must be started with a configuration file, containg paths and fancontrol informations.
+The Application must be started with a configuration file, containing paths and fancontrol informations.
 While testing, start manually "fanctrl /path/to/cfgfile --debug" and verify everything works properly.
 When satisfied with the results, create a systemd script to run automatically on startup.
 
