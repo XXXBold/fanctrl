@@ -24,6 +24,7 @@ fanctrl.service is an example script for systemd integration. Use & modify as yo
 - AMDGPU
 
 ## Versions
+. v0.2.0 (beta): Some minor fixes, improved default configuration to be more silent
 - v0.1.0 (beta): First Release
 
 ## Support
