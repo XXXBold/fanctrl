@@ -1,8 +1,8 @@
 [FanCtrlGlobal]
-;Delay time for reading sensor and updating fanspeed, in 1/10 seconds. 15=1.5 seconds
-UpdateDelayTime=15
-;Hysteresis for Temperature change, before the fanspeed is updated, in Percent calculated from current temperature. 0 to update on any change.
-TempChangeHysteresis=5
+;Delay time for reading sensor and updating fanspeed, in 1/10 seconds. 25=2.5 seconds
+UpdateDelayTime=25
+;Hysteresis for change, before the fanspeed is updated, in Percent. 0 to update on any change.
+TempChangeHysteresis=2
 
 [AMDGPU]
 PathSetFanCtrlMode ="/sys/class/drm/card0/device/hwmon/hwmon1/pwm1_enable"
@@ -22,6 +22,7 @@ PathSensorRead2="/sys/class/drm/card0/device/hwmon/hwmon1/temp3_input"
 FanSpeed1=10,200
 FanSpeed2=15,400
 FanSpeed3=20,500
-FanSpeed4=40,600
-FanSpeed5=75,700
-FanSpeed6=100,800
+FanSpeed4=25,600
+FanSpeed5=33,700
+FanSpeed6=50,800
+FanSpeed7=100,900

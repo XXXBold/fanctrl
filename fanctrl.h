@@ -2,7 +2,7 @@
   #define FANCTRL_H_INCLUDED
 
 #define FANCTRL_VERSION_MAJOR  0
-#define FANCTRL_VERSION_MINOR  1
+#define FANCTRL_VERSION_MINOR  2
 #define FANCTRL_VERSION_PATCH  0
 #define FANCTRL_VERSION_STATUS "beta"
 
@@ -68,7 +68,7 @@ typedef struct TagFanCtrl_t TagFanCtrl;
  * @param puiQuitRunFlag
  *                _IN_ Flag to indicate the Run Function to quit.
  *                Value should be 0 before Run is called, otherwise it will instantly quit.
- * @param uiFlags _IN_ Further configuration flags, see CREATE_FLAGS for options.
+ * @param uiFlags _IN_ Further configuration flags, see CREATE_FLAG_ enums above for options.
  *
  * @return New Fanctrl Object on success, NULL on error.
  */

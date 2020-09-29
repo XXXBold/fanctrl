@@ -40,6 +40,12 @@ enum
   CFG_LIMIT_MAX_DELAY_TIME              =300,   /* 30 seconds */
   CFG_LIMIT_MAX_TEMP                    =1500,  /* 150°C */
   CFG_LIMIT_MAX_HYSTERESIS              =30,    /* 30% */
+
+  SENSOR_READ_MAX_RETRIES               =3,
+
+  SENSOR_READ_RET_OK                    =0,
+  SENSOR_READ_RET_TRYAGAIN              =1,
+  SENSOR_READ_RET_FAILURE               =2,
 };
 
 #define AMDGPU_PWM_VAL_MIN 0
@@ -262,6 +268,7 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
   unsigned int uiIndex;
   unsigned int uiCurrPWM;
   int iCurrFanState;
+  int iSensorReadRetryCount;
   float fTmp;
 
   if(ptagFanCtrl->ptagAMDGPU)
@@ -288,6 +295,7 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
              tagWaitTime.tv_sec,
              tagWaitTime.tv_nsec);
 
+  iSensorReadRetryCount=0;
   while((*ptagFanCtrl->puiQuitRunFlag) == 0)
   {
     nanosleep(&tagWaitTime,NULL);
@@ -299,11 +307,25 @@ int fanCtrl_Run(TagFanCtrl *ptagFanCtrl)
       /* Read AMDGPU Sensors */
       for(uiIndex=0;uiIndex < ptagFanCtrl->ptagAMDGPU->uiSensorsCount;++uiIndex)
       {
-        if(iFanCtrl_UpdateSensor_m(eFanCtrlType_AMDGPU,
-                                   &ptagFanCtrl->ptagAMDGPU->ptagSensors[uiIndex]))
+        switch(iFanCtrl_UpdateSensor_m(eFanCtrlType_AMDGPU,
+                                       &ptagFanCtrl->ptagAMDGPU->ptagSensors[uiIndex]))
         {
-          ERR_PUTS("iGpuFanCtrl_UpdateSensor() failed");
-          return(RUN_RET_ERR_SENSOR_READ);
+          case SENSOR_READ_RET_OK: /* OK */
+            iSensorReadRetryCount=0;
+            break;
+          case SENSOR_READ_RET_TRYAGAIN: /* Temporary failure, try again if < max tries */
+            if(iSensorReadRetryCount++ < SENSOR_READ_MAX_RETRIES)
+            {
+              ERR_PRINTF("Temporary failure reading sensor, retry(%d/%d)...",
+                         iSensorReadRetryCount,
+                         SENSOR_READ_MAX_RETRIES);
+              break;
+            }
+            /* Fall-through */
+          case SENSOR_READ_RET_FAILURE: /* quit with error */
+          default:
+            ERR_PUTS("iGpuFanCtrl_UpdateSensor() failed");
+            return(RUN_RET_ERR_SENSOR_READ);
         }
         DBG_PRINTF("Current Sensor[%u]\n"
                    "\"%s\": Rawvalue=%ld, 1/10°C=%u",
@@ -419,7 +441,7 @@ static int iFanCtrl_UpdateSensor_m(EFanCtrlType eSensorType,
                ptagSensor->pcSensorReadPath,
                errno,
                strerror(errno));
-    return(1);
+    return(SENSOR_READ_RET_FAILURE);
   }
   if(fgets(caBuf,sizeof(caBuf),fp) == NULL)
   {
@@ -428,7 +450,7 @@ static int iFanCtrl_UpdateSensor_m(EFanCtrlType eSensorType,
                errno,
                strerror(errno));
     fclose(fp);
-    return(2);
+    return((errno == EIO) ? SENSOR_READ_RET_TRYAGAIN : SENSOR_READ_RET_FAILURE);
   }
   fclose(fp);
 
@@ -442,16 +464,16 @@ static int iFanCtrl_UpdateSensor_m(EFanCtrlType eSensorType,
          (*pcTmp != '\n'))
       {/* Conversion failed*/
         ERR_PUTS("Conversion string-> long failed");
-        return(3);
+        return(SENSOR_READ_RET_FAILURE);
       }
       /* Calculate Temperature in Celsius */
       ptagSensor->iTempCelsius=(int)(ptagSensor->lRawValue/AMDGPU_RAW_TO_TENTH_CELSUIS_DIVISOR);
       break;
     default:
       ERR_PRINTF("Unknown Sensortype (%d)",eSensorType);
-      return(4);
+      return(SENSOR_READ_RET_FAILURE);
   }
-  return(0);
+  return(SENSOR_READ_RET_OK);
 }
 
 static int iFanCtrl_EnableFan(EFanCtrlType eSensorType,
